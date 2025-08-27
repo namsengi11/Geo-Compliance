@@ -1,27 +1,29 @@
-import torch
+# main.py
+import argparse
+from pprint import pprint
+from retriever_service import RetrieverService
+from llm_service import LLMService
+from rag_chain import build_rag_chain  # the builder we set up for RetrievalQA
 
-from transformers import pipeline
-from langchain_huggingface import HuggingFacePipeline
-from langchain.prompts import PromptTemplate
+def main():
+    parser = argparse.ArgumentParser(description="Run RetrievalQA and print the RAW result dict.")
+    parser.add_argument("query", help="User query / feature description to evaluate.")
+    parser.add_argument("-k", "--k", type=int, default=5, help="Top-k documents to retrieve (default: 5).")
+    args = parser.parse_args()
 
-device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    # 1) Load retriever (Chroma + MiniLM) and generator (Currently Gemma-3-1b-it)
+    retr = RetrieverService(device="cpu", k=args.k)  
+    llm = LLMService()  # swap model/device in LLMService if desired with model_name
 
-model = pipeline(
-  'text-generation',
-  model='facebook/bart-large-cnn',
-  device=device,
-  max_length=256,
-  truncation=True
-)
+    # 2) Build the QA chain (stuff prompt, return sources)
+    qa = build_rag_chain(retr, llm)
 
-llm = HuggingFacePipeline(pipeline=model)
+    # 3) Get the RAW result (dict) and print it verbatim
+    raw = qa.invoke({"query": args.query})
 
-template = PromptTemplate.from_template("Evaluate if feature: {feature_name} - ({feature_description}) is compliant with the following regulation: {regulation_text}, and provide reasoning for your answer.")
+    print("\n--- RAW DICT ---")
+    pprint(raw)  # shows everything without any parsing
 
-chain = template | llm
-feature_name = "Curfew login blocker with ASL and GH for Utah minors"
-feature_description = "To comply with the Utah Social Media Regulation Act, we are implementing a curfew-based login restriction for users under 18. The system uses ASL to detect minor accounts and routes enforcement through GH to apply only within Utah boundaries. The feature activates during restricted night hours and logs activity using EchoTrace for auditability. This allows parental control to be enacted without user-facing alerts, operating in ShadowMode during initial rollout."
-regulation_text = "Utah Social Media Regulation Act"
-
-response = chain.invoke({"feature_name": feature_name, "feature_description": feature_description, "regulation_text": regulation_text})
-print(response)
+if __name__ == "__main__":
+    # Run as: python main.py "Your query here" -k 5
+    main()
