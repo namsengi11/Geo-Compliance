@@ -3,6 +3,10 @@ from dataclasses import dataclass
 from typing import List, Optional, Dict, Any, Literal
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from langchain.schema import Document
+from langchain_core.retrievers import BaseRetriever
+from langchain_core.vectorstores.base import VectorStoreRetriever
+from pydantic import Field
+from langchain_core.runnables import RunnableConfig
 
 from db import DB
 
@@ -13,38 +17,52 @@ class Retrieved:
     doc: Document
     score: Optional[float] = None
 
-class RetrieverService:
-  def __init__(self,
-        persist_dir: str = "chroma",
-        embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2",
-        device: str = "cpu",
-        normalize_embeddings: bool = True,
-        search_type: search_type = "similarity",
-        k: int = 5):
-    self.embedding = HuggingFaceEmbeddings(
-            model_name=embedding_model,
-            model_kwargs={"device": device},
-            encode_kwargs={"normalize_embeddings": normalize_embeddings},
-        )
-    self.db = DB()
-    self.db.load_db(self.embedding)
-
-    self.retriever = self.db.get_retriever(
-        search_type=search_type,
-        k=k
-    )  
-
-  def retrieve(self, query: str) -> List[Document]:
-    return self.retriever.get_relevant_documents(query)
+class RetrieverService(BaseRetriever):
+  embedding: Optional[HuggingFaceEmbeddings] = Field(default=None, exclude=True)
+  retriever: Dict[str, VectorStoreRetriever] = Field(default_factory=dict, exclude=True)
   
-  def retrieve_with_scores(self, query: str, k: int = 5) -> List[Retrieved]:
-    vs = self.db.db
-    if vs is None:
-        raise RuntimeError("Vector store not loaded.")
-    # This uses similarity search 
-    pairs = vs.similarity_search_with_score(query, k=k)
-    return [Retrieved(doc=d, score=s) for (d, s) in pairs]
+  def __init__(self,
+        embedding: HuggingFaceEmbeddings,
+        search_type: search_type = "similarity",
+        db_name: str = "",
+        retriever: Dict[str, VectorStoreRetriever] = dict(),
+        k: int = 5,
+        ):
 
+    # Initialize parent class
+    super().__init__()
 
-  def close(self):
-    self.db.close()
+    self.embedding = embedding
+    
+    if not retriever:
+      try:
+        db = DB(db_name, self.embedding)
+        self.retriever[db_name] = db.get_retriever(
+            search_type=search_type,
+            k=k
+        )
+      except Exception as e:
+        raise FileNotFoundError(f"Database {db_name} not found or failed to load. Please run ingestion to create the vector DB first. Error: {e}")
+    else:
+      self.retriever = retriever
+
+  def _get_relevant_documents(self, query: str, *, run_manager: Any = None) -> List[Document]:
+    result = []
+    for region, retriever in self.retriever.items():
+      try:
+        # Use get_relevant_documents instead of invoke for vector store retrievers
+        docs = retriever.invoke(query)
+        result.extend(docs)  # Flatten the list of documents
+      except Exception as e:
+        print(f"Error retrieving from {region}: {e}")
+        raise
+    print(result)
+    return result
+
+  # def retrieve(self, query: str) -> List[Document]:
+  #   # Since self.retriever is a dict, we need to aggregate results from all retrievers
+  #   result = []
+  #   for retriever in self.retriever.values():
+  #     docs = retriever.get_relevant_documents(query)
+  #     result.extend(docs)
+  #   return result

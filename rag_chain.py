@@ -28,10 +28,10 @@ def build_rag_chain(
     chain = RetrievalQA.from_chain_type(
         llm=llm,
         chain_type="stuff",
-        retriever=retriever_service.retriever,
+        retriever=retriever_service,
         return_source_documents=True,
         chain_type_kwargs={"prompt": prompt, "document_variable_name": "context"},
-        # verbose=True # to see what is happening
+        verbose=True # to see what is happening
     )
     return chain
 

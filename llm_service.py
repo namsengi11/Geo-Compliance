@@ -1,11 +1,13 @@
-from __future__ import annotations
+import torch
+
 from typing import Optional
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, AutoModelForCausalLM, pipeline
 from langchain_huggingface import HuggingFacePipeline
 
 class LLMService:
     def __init__(self,
-        model_name: str = "google/gemma-3-1b-it", 
+        model_name: str = "meta-llama/Llama-3.2-1B",
+        # model_name: str = "Qwen/Qwen3-4B-Base",
         task: Optional[str] = None,   # autodetect if None
         device: int = 0,             # -1=CPU, 0=first GPU
         max_new_tokens: int = 192,
@@ -22,7 +24,8 @@ class LLMService:
         tok = AutoTokenizer.from_pretrained(model_name)
         if tok.pad_token_id is None:
             tok.pad_token = tok.eos_token # avoid warnings  
-        mdl = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True)
+        mdl = AutoModelForCausalLM.from_pretrained(model_name)
+        # mdl = torch.compile(mdl)
         self.pipe = pipeline(
             "text-generation",
             model=mdl,
