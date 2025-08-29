@@ -1,40 +1,66 @@
-import torch
-
+# llm_service.py
+from __future__ import annotations
 from typing import Optional
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, AutoModelForCausalLM, pipeline
+import torch
+from transformers import (
+    AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, pipeline
+)
 from langchain_huggingface import HuggingFacePipeline
 
+DEFAULT_MODEL = "meta-llama/Meta-Llama-3-8B-Instruct"
+
 class LLMService:
-    def __init__(self,
-        model_name: str = "meta-llama/Llama-3.2-1B",
-        # model_name: str = "Qwen/Qwen3-4B-Base",
-        task: Optional[str] = None,   # autodetect if None
-        device: int = 0,             # -1=CPU, 0=first GPU
-        max_new_tokens: int = 192,
-        temperature: float = 0.2,
-        top_p: float = 0.9):
-
+    def __init__(
+        self,
+        model_name: str = DEFAULT_MODEL,
+        # device: int = 0,                 # -1 for CPU; 0 for first CUDA device
+        max_new_tokens: int = 512,
+        do_sample: bool = False,         # deterministic
+        top_p: float = 1.0,              # ignored when do_sample=False
+        use_4bit: bool = True,           # quantize to fit on 8GB VRAM
+    ):
         self.model_name = model_name
-        self.device = device
-        self.max_new_tokens = max_new_tokens
-        self.temperature = temperature
-        self.top_p = top_p
 
-        # decoder only models like GPT, Llama, etc.
+        # --- Tokenizer ---
         tok = AutoTokenizer.from_pretrained(model_name)
         if tok.pad_token_id is None:
-            tok.pad_token = tok.eos_token # avoid warnings  
-        mdl = AutoModelForCausalLM.from_pretrained(model_name)
-        # mdl = torch.compile(mdl)
-        self.pipe = pipeline(
-            "text-generation",
-            model=mdl,
-            tokenizer=tok,
-            device=device,
-            max_new_tokens=max_new_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            return_full_text=False
+            tok.pad_token = tok.eos_token
+
+        # --- Quantization config (4-bit NF4) ---
+        quant_cfg = None
+        if use_4bit:
+            quant_cfg = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_compute_dtype=torch.bfloat16,
+            )
+
+        # --- Load model ---
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            quantization_config=quant_cfg,
+            device_map="auto",   # auto offload if needed
+            low_cpu_mem_usage=True,
+            torch_dtype=torch.bfloat16 if not use_4bit else None,
         )
 
+        # --- Text-generation pipeline (deterministic) ---
+        gen_kwargs = dict(
+            max_new_tokens=max_new_tokens,
+            do_sample=do_sample,
+            batch_size=1,
+            top_p=top_p,
+            return_full_text=False,
+        )
+        # DO NOT pass temperature when do_sample=False (it gets ignored)
+        pipe = pipeline(
+            "text-generation",
+            model=model,
+            tokenizer=tok,
+            device_map="auto",
+            **gen_kwargs
+        )
+
+        self.pipe = pipe
         self.llm = HuggingFacePipeline(pipeline=self.pipe)

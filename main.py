@@ -1,11 +1,22 @@
 # main.py
-import argparse
+import argparse, json
 from pprint import pprint
 from retriever_service import RetrieverService
 from llm_service import LLMService
 from rag_chain import build_rag_chain  # the builder we set up for RetrievalQA
 from db_orchestrator import DBOrchestrator
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
+
+def extract_json(raw: str) -> dict:
+    # Drop code fences if present
+    if "```" in raw:
+        parts = raw.split("```")
+        raw = parts[-1] if parts else raw
+    # Take the last {...} block
+    s, e = raw.find("{"), raw.rfind("}")
+    if s == -1 or e == -1 or e <= s:
+        raise ValueError("No JSON object found in input.")
+    return json.loads(raw[s:e+1])
 
 def main():
     parser = argparse.ArgumentParser(description="Run RetrievalQA and print the RAW result dict.")
@@ -18,7 +29,8 @@ def main():
         "United States",
         "European Union",
         "California",
-        "Florida"
+        "Florida",
+        "Global"
     ]
     llm = LLMService()
     embedding_model = "sentence-transformers/all-MiniLM-L6-v2"
@@ -64,9 +76,12 @@ def main():
     # 4) Get the RAW result (dict) and print it verbatim
     raw = qa.invoke({"query": args.query})
 
-    print("\n--- RAW DICT ---")
-    pprint(raw)  # shows everything without any parsing
+    # print("\n--- RAW DICT ---")
+    # pprint(raw)  # shows everything without any parsing
 
+    obj = extract_json(raw['result'])
+    print("\n--- PARSED JSON ---")
+    pprint(obj)  # shows the parsed JSON object
 if __name__ == "__main__":
     # Run as: python main.py "Your query here" -k 5
     main()

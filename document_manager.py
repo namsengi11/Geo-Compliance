@@ -47,7 +47,12 @@ class DocumentManager():
       self.save_to_db(region, chunks)
 
   def save_to_db(self, region, chunks):
-    db = DB(region, self.embedding)
+    for d in chunks:
+        if not getattr(d, "metadata", None):
+            d.metadata = {}
+        d.metadata["region"] = region
+
+    db = DB(self.embedding)
     db.insert_chunks(chunks)
 
 if __name__ == "__main__":

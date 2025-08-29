@@ -10,9 +10,10 @@ class DBOrchestrator:
     def __init__(self, embedding: HuggingFaceEmbeddings):
         self.embedding = embedding
         regions = os.listdir(self.CHROMA_BASE_PATH)
-        self.db_by_region = {}
-        for region in regions:
-            self.db_by_region[region] = DB(region, self.embedding)
+        # self.db_by_region = {}
+        # for region in regions:
+        #     self.db_by_region[region] = DB(region, self.embedding)
+        self.db = DB(embedding=self.embedding)  
 
     def get_retriever_by_region(self, region):
         '''
@@ -25,7 +26,7 @@ class DBOrchestrator:
             dict: key: region, value: retriever
         '''
         if isinstance(region, str):
-            return self.db_by_region[region].get_retriever()
+            return self.db.get_retriever(region=region)
 
         # Input is list
         retrievers = {}
