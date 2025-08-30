@@ -2,14 +2,16 @@
 import argparse, json, os
 
 from pprint import pprint
+from typing import Literal
 from retriever_service import RetrieverService
 from llm_service import LLMService
 from rag_chain import build_rag_chain, extract_json  # the builder we set up for RetrievalQA
 from db_orchestrator import DBOrchestrator
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from code_change_evaluator import CodeChangeEvaluator
+from gemini_llm_service import GeminiLLMService
 
-def process_query(llm, query, k):
+def process_query(llm, query, k, model):
     AVAILABLE_REGIONS = [
         "Utah",
         "United States",
@@ -45,13 +47,14 @@ def process_query(llm, query, k):
         Query: {query}
         Answer:"""
 
-    response = llm.pipe(prompt)[0]['generated_text']
-    # Find first next line
-    index = response.find("\n")
-    response = response[:index]
-    response = response.strip()
-    regions = response.split(", ")
+    text = (llm.generate_text(prompt) if isinstance(llm, GeminiLLMService) else llm.pipe(prompt)[0]['generated_text']) or ""
+    response = text.splitlines()[0].strip()
+    print("Raw LLM response:", text)
+    print("first line LLM response:", response)
+    regions = [r.strip() for r in response.split(",") if r.strip()]
     
+    print(f"Identified regions: {regions}")
+
     # 2) Load retriever and retrievalservice according to regions
     retrievers = db_orchestrator.get_retriever_by_region(regions)
     retrieverServices = RetrieverService(k=k, retriever=retrievers, embedding=embeddings)
@@ -65,10 +68,10 @@ def process_query(llm, query, k):
     # print("\n--- RAW DICT ---")
     # pprint(raw)  # shows everything without any parsing
 
-    obj = extract_json(raw['result'])
-    print("\n--- PARSED JSON ---")
-    pprint(obj)  # shows the parsed JSON object
-    return obj
+    # obj = extract_json(raw['result'])
+    # print("\n--- PARSED JSON ---")
+    # pprint(obj)  # shows the parsed JSON object
+    return raw.get("result", "")
 
 def process_evaluate(llm, json_path):
     code_change_evaluator = CodeChangeEvaluator(llm)
@@ -80,11 +83,11 @@ def main():
     parser = argparse.ArgumentParser(description="Run RetrievalQA and print the RAW result dict.")
     parser.add_argument("-query", "--query", help="User query / feature description to evaluate.")
     parser.add_argument("-k", "--k", type=int, default=5, help="Top-k documents to retrieve (default: 5).")
-    
+    parser.add_argument("--model", choices=["gemini", "local"], default="gemini", help="LLM model to use (default: gemini-2.5-flash).")
     parser.add_argument("-evaluate", "--evaluate",type=str, help="Evaluate the code change stored in json path")
     args = parser.parse_args()
 
-    llm = LLMService()
+    llm = GeminiLLMService() if args.model == "gemini" else LLMService()
 
     if args.evaluate:
         # Check if the file exists

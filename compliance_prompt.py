@@ -1,45 +1,42 @@
 # compliance_prompt.py
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 
-def compliance_prompt(max_issues: int = 5, constraints: str = "AllowedCitations: []") -> PromptTemplate:
-    _SYS = "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n"
-    _USER = "<|eot_id|><|start_header_id|>user<|end_header_id|>\n"
-    _ASSIST = "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n"
-
+def compliance_prompt(json_mode: str = "text"):
+    """
+    RetrievalQA-friendly prompt (chain_type='stuff').
+    IMPORTANT: RetrievalQA expects {context} and {question}.
+      - {context} → stuffed source excerpts
+      - {question} → user feature description
+    """
     SYSTEM = (
         "You are a geo-regulation compliance assistant.\n"
-        "Use ONLY the provided Context (statutes/regulations) and the user's feature description.\n"
-        "Ignore implementation nicknames unless they appear in Context.\n\n"
-        "OUTPUT MODE (JSON-ONLY)\n"
-        "• Return a SINGLE valid JSON object and nothing else (no prose, no code fences).\n"
-        "• Keys and types (exactly these, no extras):\n"
-        '  - "compliance_needed": boolean\n'
-        f'  - "issues": string[]   // concrete gaps vs the law; max {max_issues} items; each ≤ 20 words; start with "Missing", "Unclear", or "Must"\n'
-        '  - "reasoning": string  // 1–2 sentences referencing law anchors; do NOT restate the feature\n'
-        '  - "jurisdiction": string[]  // jurisdictions explicitly named in Context (e.g., "Utah")\n'
-        '  - "citation": string[] // ≤ 5 UNIQUE law anchors used, e.g., "13-63-105(1)"\n\n'
-        "DECISION RULES\n"
-        "• If ANY requirement is unmet or unclear ⇒ compliance_needed=true.\n"
-        "• Each issue MUST be grounded in Context and supported by ≥1 anchor listed in citation.\n"
-        "• citation MUST be ≤5 unique items; choose ONLY from AllowedCitations if provided; do NOT output generic labels like 'Utah Code'.\n"
-        "• Keep output concise; avoid long quotes.\n\n"
-        "FALLBACK WHEN INSUFFICIENT CONTEXT\n"
-        "• If Context lacks the requirements to decide, output exactly:\n"
-        "{% raw %}{\"compliance_needed\": false, \"issues\": [], \"reasoning\": \"insufficient context to determine compliance\", \"jurisdiction\": [], \"citation\": []}{% endraw %}\n\n"
-        "EMIT JSON WITH THIS SHAPE:\n"
-        "{% raw %}{\"compliance_needed\": <true|false>, \"issues\": [\"...\"], \"reasoning\": \"...\", \"jurisdiction\": [\"...\"], \"citation\": [\"13-63-105(1)\"]}{% endraw %}\n"
+        "Use ONLY the provided Context (authoritative excerpts). Do not use outside knowledge.\n\n"
+        "Principles:\n"
+        "• High-recall audit stance: when uncertain, prefer flagging potential gaps (use items starting with “Unclear …”).\n"
+        "• Leave evidence: every issue must include a verbatim supporting sentence copied from Context in `evidence`.\n"
+        "• Explicit logic: in `reasoning`, briefly state the legal requirement and why the feature fails or is unclear.\n"
+        "• AVOID HALLUCINATION: never cite laws or facts not present in Context.\n\n"
+        "Output format (STRICT): Return ONLY one valid JSON object with EXACTLY these keys and structure:\n"
+        "{{\n"
+        '  "compliance_need": true|false,\n'
+        '  "issues": [\n'
+        '    {{\n'
+        '      "issue": "<starts with Missing/Unclear/Must; ≤ 20 words>",\n'
+        '      "reasoning": "<1–2 sentences; reference section anchors like 13-63-105(3)(a) if present>",\n'
+        '      "evidence": "<ONE verbatim sentence copied from Context; append anchor in parentheses if available>"\n'
+        "    }}\n"
+        "  ]\n"
+        "}}\n\n"
+        "Constraints:\n"
+        "• issues ≤ 5 total.\n"
+        "• Each `evidence` MUST be a single verbatim sentence from Context; no paraphrase; no extra commentary.\n"
+        "• If multiple lines look relevant, pick the most specific sentence (closest to the anchor subsection).\n"
+        "• If NO sufficient Context to assess overall, return exactly:\n"
+        '{{ "compliance_need": false, "issues": [ {{ "issue": "insufficient context", "reasoning": "Context lacks specific legal text to assess the feature.", "evidence": "" }} ] }}\n'
     )
 
-    USER = (
-        "Feature description:\n{{ question }}\n\n"
-        "Constraints (may be empty; pick citations only from list if present):\n{{ constraints }}\n\n"
-        "Context (authoritative; quote only short snippets ≤ 30 words if needed):\n{{ context }}\n"
-    )
+    # RetrievalQA requires these placeholders:
+    USER = "Feature description:\n{question}\n\nContext:\n{context}"
 
-    template = _SYS + SYSTEM + _USER + USER + _ASSIST
-    return PromptTemplate(
-        template=template,
-        template_format="jinja2",
-        input_variables=["question", "context"],
-        partial_variables={"constraints": constraints}
-    )
+    # Works with Gemini (JSON mime) and local Llama (prompt-enforced JSON)
+    return ChatPromptTemplate.from_messages([("system", SYSTEM), ("user", USER)])
