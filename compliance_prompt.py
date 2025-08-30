@@ -11,6 +11,8 @@ def compliance_prompt(json_mode: str = "text"):
     SYSTEM = (
         "You are a geo-regulation compliance assistant.\n"
         "Use ONLY the provided Context (authoritative excerpts). Do not use outside knowledge.\n\n"
+        "Always continue until ALL required keys and issues are fully filled."
+        "Do not stop generation until the JSON object is fully closed with a '}}'."
         "Principles:\n"
         "• High-recall audit stance: when uncertain, prefer flagging potential gaps (use items starting with “Unclear …”).\n"
         "• Leave evidence: every issue must include a verbatim supporting sentence copied from Context in `evidence`.\n"

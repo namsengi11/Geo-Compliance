@@ -123,7 +123,6 @@ with colA:
 
 with colB:
     with st.container():
-        st.markdown("<div class='demo-card'>", unsafe_allow_html=True)
         st.markdown("**Status**")
         key_ok = "GEMINI_API_KEY" in os.environ and bool(os.environ["GEMINI_API_KEY"].strip())
         st.metric("Gemini API key", "Found" if key_ok else "Missing", delta=None)
@@ -134,8 +133,8 @@ with colB:
 with st.sidebar:
     st.markdown("### ⚙️ Settings")
     model_name = st.selectbox("Gemini model", ["gemini-2.5-flash", "gemini-2.5-pro"], index=0)
-    k = st.slider("Top-K retrieval", 1, 8, 5)
-    max_tokens = st.slider("Max output tokens", 256, 4096, 1536, step=128)
+    k = st.slider("Top-K retrieval", 1, 5, 3)
+    max_tokens = st.slider("Max output tokens", 256, 8192, 4096, step=128)
     st.markdown("---")
     # CSV path defaults to the batch logger's file for consistency
     history_csv = st.text_input("Results CSV path", value="sample_data_response.csv",
@@ -145,7 +144,6 @@ with st.sidebar:
 # ---------- INPUTS ----------
 st.markdown("### Describe Your Feature")
 with st.container():
-    st.markdown("<div class='demo-card'>", unsafe_allow_html=True)
     feature = st.text_input(
         "Feature name",
         key="feature_name",
