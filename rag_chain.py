@@ -35,6 +35,17 @@ def build_rag_chain(
     )
     return chain
 
+def extract_json(raw: str) -> dict:
+    # Drop code fences if present
+    if "```" in raw:
+        parts = raw.split("```")
+        raw = parts[-1] if parts else raw
+    # Take the last {...} block
+    s, e = raw.find("{"), raw.rfind("}")
+    if s == -1 or e == -1 or e <= s:
+        raise ValueError("No JSON object found in input.")
+    return json.loads(raw[s:e+1])
+
 
 # def parser(result) -> ComplianceResult:
 #     """

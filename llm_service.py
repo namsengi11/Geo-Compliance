@@ -7,7 +7,8 @@ from transformers import (
 )
 from langchain_huggingface import HuggingFacePipeline
 
-DEFAULT_MODEL = "meta-llama/Meta-Llama-3-8B-Instruct"
+# DEFAULT_MODEL = "meta-llama/Meta-Llama-3-8B-Instruct"
+DEFAULT_MODEL = "meta-llama/Llama-3.2-3B-Instruct"
 
 class LLMService:
     def __init__(
@@ -28,13 +29,16 @@ class LLMService:
 
         # --- Quantization config (4-bit NF4) ---
         quant_cfg = None
-        if use_4bit:
-            quant_cfg = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_compute_dtype=torch.bfloat16,
-            )
+        try:
+            if use_4bit:
+                quant_cfg = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_use_double_quant=True,
+                    bnb_4bit_compute_dtype=torch.bfloat16,
+                )
+        except Exception as e:
+            print(f"No quantization config found for {model_name}")
 
         # --- Load model ---
         model = AutoModelForCausalLM.from_pretrained(
