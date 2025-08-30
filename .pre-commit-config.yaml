@@ -1,0 +1,17 @@
+repos:
+  - repo: local
+    hooks:
+      - id: record-and-evaluate-changes
+        name: Record and evaluate file changes
+        entry: python record_changes.py
+        language: system
+        stages: [pre-commit]
+        pass_filenames: false
+        always_run: true
+      - id: notify-geocompliance-results
+        name: Notify geocompliance evaluation completed
+        entry: python -c "print('Geocompliance evaluation results have been saved under code_change_geocompliance/ directory as individual txt files')"
+        language: system
+        stages: [pre-commit]
+        pass_filenames: false
+        always_run: true

@@ -56,7 +56,7 @@ class RetrieverService(BaseRetriever):
       except Exception as e:
         print(f"Error retrieving from {region}: {e}")
         raise
-    print(result)
+    print(f'Retrieved documents: {result}')
     return result
 
   # def retrieve(self, query: str) -> List[Document]:
