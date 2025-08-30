@@ -8,6 +8,7 @@ from rag_chain import build_rag_chain, extract_json  # the builder we set up for
 from db_orchestrator import DBOrchestrator
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from code_change_evaluator import CodeChangeEvaluator
+from dev_doc_evaluator import DevDocEvaluator
 
 def process_query(llm, query, k):
     AVAILABLE_REGIONS = [
@@ -70,10 +71,16 @@ def process_query(llm, query, k):
     pprint(obj)  # shows the parsed JSON object
     return obj
 
-def process_evaluate(llm, json_path):
+def evaluate_code_change(llm, json_path):
     code_change_evaluator = CodeChangeEvaluator(llm)
     response = code_change_evaluator.evaluate(json_path)
     print(f'Code change evaluation: {response}')
+    return response
+
+def evaluate_dev_doc(llm, dev_doc_dir):
+    dev_doc_evaluator = DevDocEvaluator(llm)
+    response = dev_doc_evaluator.evaluate(dev_doc_dir)
+    print(f'Dev doc evaluation: {response}')
     return response
 
 def main():
@@ -81,18 +88,19 @@ def main():
     parser.add_argument("-query", "--query", help="User query / feature description to evaluate.")
     parser.add_argument("-k", "--k", type=int, default=5, help="Top-k documents to retrieve (default: 5).")
     
-    parser.add_argument("-evaluate", "--evaluate",type=str, help="Evaluate the code change stored in json path")
+    parser.add_argument("-evaluate_code", "--evaluate_code",type=str, help="Evaluate the code change stored in json path")
+    parser.add_argument("-evaluate_doc", "--evaluate_doc",type=str, help="Evaluate the dev doc stored in json path")
     args = parser.parse_args()
 
     llm = LLMService()
 
-    if args.evaluate:
+    if args.evaluate_code:
         # Check if the file exists
-        if not os.path.exists(args.evaluate):
-            print(f"Error: {args.evaluate} does not exist")
+        if not os.path.exists(args.evaluate_code):
+            print(f"Error: {args.evaluate_code} does not exist")
             return
 
-        code_changes = process_evaluate(llm, args.evaluate)
+        code_changes = evaluate_code_change(llm, args.evaluate_code)
         # Save code change evaluation into txt file
         # Check if the directory exists
         if not os.path.exists('code_change_eval'):
@@ -112,6 +120,43 @@ def main():
                 os.makedirs('code_change_geocompliance')
             with open(f'code_change_geocompliance/{code_change["file"]}.txt', 'w') as f:
                 f.write(f'{response}\n')
+
+    elif args.evaluate_doc:
+        # Check if the file exists
+        if not os.path.exists(args.evaluate_doc):
+            print(f"Error: {args.evaluate_doc} does not exist")
+            return
+
+        dev_docs = evaluate_dev_doc(llm, args.evaluate_doc)
+        # Save code change evaluation into txt file
+        # Check if the directory exists
+        if not os.path.exists('dev_doc_eval'):
+            os.makedirs('dev_doc_eval')
+
+        for dev_doc in dev_docs:
+            with open(f'dev_doc_eval/{dev_doc["file"]}_features.txt', 'w') as f:
+                geocompliance_responses = []
+                for feature in dev_doc['features']:
+                    f.write(f'{feature["feature_name"]} {feature["feature_description"]}\n')
+
+                    query = feature['feature_name'] + ' ' + feature['feature_description']
+                    print(f'query: {query}')
+                    try:
+                        response = process_query(llm, query, args.k)
+                    except Exception as e:
+                        print(f'Error processing feature: {feature}: {e}')
+                        continue
+                    
+                    try:
+                        geocompliance_responses.append(response)
+                    except Exception as e:
+                        print(f'Error processing feature: {feature}: {e}')
+
+            # Save query response into txt file
+            if not os.path.exists('dev_doc_geocompliance'):
+                os.makedirs('dev_doc_geocompliance')
+            with open(f'dev_doc_geocompliance/{dev_doc["file"]}_features.txt', 'w') as f:
+                f.write(f'{geocompliance_responses}\n')
 
     elif args.query:
         response = process_query(llm, args.query, args.k)

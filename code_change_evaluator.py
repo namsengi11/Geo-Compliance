@@ -8,6 +8,7 @@ class CodeChangeEvaluator:
     def __init__(self, llm: LLMService):
         self.llm = llm
 
+
     def evaluate(self, json_path: str):
         try: 
             with open(json_path, "r", encoding='utf-8') as f:

@@ -15,7 +15,7 @@ class LLMService:
         self,
         model_name: str = DEFAULT_MODEL,
         # device: int = 0,                 # -1 for CPU; 0 for first CUDA device
-        max_new_tokens: int = 512,
+        max_new_tokens: int = 1024,
         do_sample: bool = False,         # deterministic
         top_p: float = 1.0,              # ignored when do_sample=False
         use_4bit: bool = True,           # quantize to fit on 8GB VRAM
