@@ -34,7 +34,7 @@ class GeminiLLMService:
         # Main LLM (no response_mime_type, no response_schema here)
         self.llm = ChatGoogleGenerativeAI(model=model_json, response_mime_type="application/json",  **{**common, "max_output_tokens": 4096})
         # Helper for quick plain-text prompts
-        self._raw = ChatGoogleGenerativeAI(model=model_text, **{**common, "max_output_tokens": 512})
+        self._raw = ChatGoogleGenerativeAI(model=model_text, **{**common, "max_output_tokens": 4096})
 
     def generate_text(self, prompt: str) -> str:
         msg = self._raw.invoke(prompt)

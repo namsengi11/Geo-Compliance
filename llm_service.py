@@ -14,18 +14,11 @@ class LLMService:
     def __init__(
         self,
         model_name: str = DEFAULT_MODEL,
-<<<<<<< HEAD
         # device: int = 0,                 # -1 for CPU; 0 for first CUDA device
         max_new_tokens: int = 1024,
         do_sample: bool = False,         # deterministic
         top_p: float = 1.0,              # ignored when do_sample=False
         use_4bit: bool = True,           # quantize to fit on 8GB VRAM
-=======
-        max_new_tokens: int = 512,
-        do_sample: bool = False,     # deterministic
-        top_p: float = 1.0,
-        use_4bit: bool = True,
->>>>>>> 79a630c32a228464a2feaeae9c0d1045385b31c5
     ):
         self.model_name = model_name
 

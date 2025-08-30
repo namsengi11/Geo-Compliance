@@ -7,7 +7,6 @@ class DB:
   def __init__(self, embedding):
     self.CHROMA_BASE_PATH = "chroma"
     self.db_path = self.CHROMA_BASE_PATH
-    print(self.db_path)
     self.db: Chroma = Chroma(
       embedding_function=embedding,
       persist_directory=self.db_path

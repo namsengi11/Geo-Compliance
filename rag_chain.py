@@ -1,40 +1,79 @@
+# rag_chain.py
 from __future__ import annotations
-from dataclasses import dataclass
 import json
-from typing import Dict, Any, List
+from typing import Any, Dict, List
+from pydantic import Field
+
 from langchain.chains import RetrievalQA
-from langchain_core.output_parsers.string import StrOutputParser
-from langchain.schema import Document
+from langchain_core.retrievers import BaseRetriever
+from langchain_core.documents import Document
 
 from compliance_prompt import compliance_prompt
-from retriever_service import RetrieverService
-from llm_service import LLMService
-from gemini_llm_service import GeminiLLMService
+from terminology import expand_query
 
-MAX_CONTEXT_CHARS = 6000 
 
-@dataclass
-class ComplianceResult:
-    answer_text: str
-    json: Dict[str, Any]
-    documents: List[Document]
+class ExpandedFilteredRetriever(BaseRetriever):
+    """
+    A compliant LangChain retriever that:
+      - expands acronyms/codenames in the query before retrieval
+      - filters out glossary docs (metadata.doc_type == "glossary") so they
+        never get stuffed into the prompt
+    """
+    base: BaseRetriever | Any = Field(repr=False)
+
+    def _strip_glossary(self, docs: List[Document]) -> List[Document]:
+        if not docs:
+            return []
+        return [
+            d for d in docs
+            if (getattr(d, "metadata", None) or {}).get("doc_type") != "glossary"
+        ]
+
+    def _get_relevant_documents(
+        self, query: str, *, run_manager: Any = None
+    ) -> List[Document]:
+        q = expand_query(query)
+        # Support both BaseRetriever and simple services with the same method
+        if isinstance(self.base, BaseRetriever):
+            docs = self.base.get_relevant_documents(q)
+        else:
+            docs = self.base.get_relevant_documents(q)  # best-effort delegation
+        return self._strip_glossary(docs)
+
+    async def _aget_relevant_documents(
+        self, query: str, *, run_manager: Any = None
+    ) -> List[Document]:
+        q = expand_query(query)
+        if isinstance(self.base, BaseRetriever):
+            docs = await self.base.aget_relevant_documents(q)
+        else:
+            # Fallback to sync path if async not available
+            docs = self.base.get_relevant_documents(q)
+        return self._strip_glossary(docs)
+
 
 def build_rag_chain(
-    retriever_service: RetrieverService,
-    llm_service: LLMService | GeminiLLMService,
+    retriever,         # can be a BaseRetriever OR your custom service
+    llm_service,       # GeminiLLMService or LLMService (must expose .llm)
 ) -> RetrievalQA:
     prompt = compliance_prompt()
-    llm = llm_service.llm
 
-    chain = RetrievalQA.from_chain_type(
-        llm=llm,
+    # Wrap the provided retriever with our BaseRetriever-compatible wrapper
+    wrapped = ExpandedFilteredRetriever(base=retriever)
+
+    qa = RetrievalQA.from_chain_type(
+        llm=llm_service.llm,
         chain_type="stuff",
-        retriever=retriever_service,
+        retriever=wrapped,
         return_source_documents=False,
-        chain_type_kwargs={"prompt": prompt, "document_variable_name": "context"},
-        verbose=True # to see what is happening
+        chain_type_kwargs={
+            "prompt": prompt,
+            "document_variable_name": "context",
+        },
+        verbose=False,
     )
-    return chain
+    return qa
+
 
 def extract_json(raw: str) -> dict:
     # Drop code fences if present
@@ -46,11 +85,3 @@ def extract_json(raw: str) -> dict:
     if s == -1 or e == -1 or e <= s:
         raise ValueError("No JSON object found in input.")
     return json.loads(raw[s:e+1])
-
-
-# def parser(result) -> ComplianceResult:
-#     """
-#     Parses the output from the RAG chain into a structured ComplianceResult.
-#     Expects the output to have an 'Answer:' part and a JSON part.
-#     """
-#     full_text = result['result']

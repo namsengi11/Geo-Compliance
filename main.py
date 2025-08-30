@@ -1,6 +1,7 @@
 # main.py
-import argparse, json, os
+import argparse, json, os, sys, logging, warnings
 
+import torch
 from pprint import pprint
 from typing import Literal
 from retriever_service import RetrieverService
@@ -12,7 +13,22 @@ from code_change_evaluator import CodeChangeEvaluator
 from dev_doc_evaluator import DevDocEvaluator
 from gemini_llm_service import GeminiLLMService
 
-def process_query(llm, query, k, model):
+warnings.filterwarnings("ignore")              # nuke all warnings (UserWarning, Deprecation, etc.)
+logging.captureWarnings(True)                  # route warnings to logging (then filtered by level)
+logging.basicConfig(level=logging.ERROR)       # default: show only errors
+
+for name in [
+    "langchain", "langchain_core", "langchain_community",
+    "langchain_google_genai", "httpx", "chromadb",
+    "urllib3", "requests"
+]:
+    logging.getLogger(name).setLevel(logging.ERROR)
+
+# Optional: silence TF/NumExpr if present
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+os.environ.setdefault("NUMEXPR_MAX_THREADS", "1")
+
+def process_query(llm, query, k):
     AVAILABLE_REGIONS = [
         "Utah",
         "United States",
@@ -26,12 +42,12 @@ def process_query(llm, query, k, model):
     # Create the embeddings object once and reuse it
     embeddings = HuggingFaceEmbeddings(
         model_name=embedding_model,
-        model_kwargs={"device": "cuda"},
+        model_kwargs={"device": 'cuda' if torch.cuda.is_available() else 'cpu'},
         encode_kwargs={"normalize_embeddings": True},
     )
     db_orchestrator = DBOrchestrator(embeddings)
+    
 
-    # Method 1: Few-shot prompting with examples
     prompt = f"""System: Classify this query into geographic regions. Return only the region names and end response.
         Available regions: {', '.join(AVAILABLE_REGIONS)}
 
@@ -45,16 +61,19 @@ def process_query(llm, query, k, model):
         Query: "EU GDPR compliance and US regulations..."
         Answer: European Union, United States
 
+        Query: "Story resharing with content expiry..." (Region unidentifiable)
+        Answer: Global
+
         Query: {query}
         Answer:"""
 
     text = (llm.generate_text(prompt) if isinstance(llm, GeminiLLMService) else llm.pipe(prompt)[0]['generated_text']) or ""
-    response = text.splitlines()[0].strip()
-    print("Raw LLM response:", text)
-    print("first line LLM response:", response)
+    try:
+        response = text.splitlines()[0].strip()
+    except Exception as e:
+        response = "Global"
     regions = [r.strip() for r in response.split(",") if r.strip()]
-    
-    print(f"Identified regions: {regions}")
+    print("Regions: ", regions)
 
     # 2) Load retriever and retrievalservice according to regions
     retrievers = db_orchestrator.get_retriever_by_region(regions)
@@ -165,7 +184,7 @@ def main():
 
     elif args.query:
         response = process_query(llm, args.query, args.k)
-        print(f'Response: {response}')
+        print(response)
 
 if __name__ == "__main__":
     # Run as: python main.py "Your query here" -k 5
