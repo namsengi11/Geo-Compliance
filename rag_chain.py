@@ -9,6 +9,7 @@ from langchain.schema import Document
 from compliance_prompt import compliance_prompt
 from retriever_service import RetrieverService
 from llm_service import LLMService
+from gemini_llm_service import GeminiLLMService
 
 MAX_CONTEXT_CHARS = 6000 
 
@@ -20,7 +21,7 @@ class ComplianceResult:
 
 def build_rag_chain(
     retriever_service: RetrieverService,
-    llm_service: LLMService
+    llm_service: LLMService | GeminiLLMService,
 ) -> RetrievalQA:
     prompt = compliance_prompt()
     llm = llm_service.llm
@@ -29,7 +30,7 @@ def build_rag_chain(
         llm=llm,
         chain_type="stuff",
         retriever=retriever_service,
-        return_source_documents=True,
+        return_source_documents=False,
         chain_type_kwargs={"prompt": prompt, "document_variable_name": "context"},
         verbose=True # to see what is happening
     )
