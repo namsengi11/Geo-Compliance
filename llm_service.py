@@ -2,31 +2,25 @@
 from __future__ import annotations
 from typing import Optional
 import torch
-from transformers import (
-    AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, pipeline
-)
+from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig, pipeline
 from langchain_huggingface import HuggingFacePipeline
 
 DEFAULT_MODEL = "meta-llama/Meta-Llama-3-8B-Instruct"
 
 class LLMService:
+    """HuggingFace-based local model service with a common interface."""
     def __init__(
         self,
         model_name: str = DEFAULT_MODEL,
-        # device: int = 0,                 # -1 for CPU; 0 for first CUDA device
         max_new_tokens: int = 512,
-        do_sample: bool = False,         # deterministic
-        top_p: float = 1.0,              # ignored when do_sample=False
-        use_4bit: bool = True,           # quantize to fit on 8GB VRAM
+        do_sample: bool = False,
+        top_p: float = 1.0,
+        use_4bit: bool = True,
     ):
-        self.model_name = model_name
-
-        # --- Tokenizer ---
         tok = AutoTokenizer.from_pretrained(model_name)
         if tok.pad_token_id is None:
             tok.pad_token = tok.eos_token
 
-        # --- Quantization config (4-bit NF4) ---
         quant_cfg = None
         if use_4bit:
             quant_cfg = BitsAndBytesConfig(
@@ -36,16 +30,14 @@ class LLMService:
                 bnb_4bit_compute_dtype=torch.bfloat16,
             )
 
-        # --- Load model ---
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             quantization_config=quant_cfg,
-            device_map="auto",   # auto offload if needed
+            device_map="auto",
             low_cpu_mem_usage=True,
             torch_dtype=torch.bfloat16 if not use_4bit else None,
         )
 
-        # --- Text-generation pipeline (deterministic) ---
         gen_kwargs = dict(
             max_new_tokens=max_new_tokens,
             do_sample=do_sample,
@@ -53,14 +45,11 @@ class LLMService:
             top_p=top_p,
             return_full_text=False,
         )
-        # DO NOT pass temperature when do_sample=False (it gets ignored)
-        pipe = pipeline(
-            "text-generation",
-            model=model,
-            tokenizer=tok,
-            device_map="auto",
-            **gen_kwargs
-        )
+        self.pipe = pipeline("text-generation", model=model, tokenizer=tok, device_map="auto", **gen_kwargs)
+        self.llm = HuggingFacePipeline(pipeline=self.pipe)  # used by RetrievalQA
 
-        self.pipe = pipe
-        self.llm = HuggingFacePipeline(pipeline=self.pipe)
+    def generate_text(self, prompt: str) -> str:
+        """Simple text generation for small utilities like region classification."""
+        out = self.pipe(prompt, num_return_sequences=1)
+        txt = out[0]["generated_text"]
+        return txt
