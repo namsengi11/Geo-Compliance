@@ -68,6 +68,7 @@ def process_query(llm, query, k):
     obj = extract_json(raw['result'])
     print("\n--- PARSED JSON ---")
     pprint(obj)  # shows the parsed JSON object
+    return obj
 
 def process_evaluate(llm, json_path):
     code_change_evaluator = CodeChangeEvaluator(llm)
